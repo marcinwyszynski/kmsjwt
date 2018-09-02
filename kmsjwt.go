@@ -34,11 +34,15 @@ func DisableCache(k *kmsClient) {
 
 // New provides a KMS-based implementation of JWT signing method.
 func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMethod {
-	return &kmsClient{
+	ret := &kmsClient{
 		KMSAPI:   client,
 		cache:    make(map[string]string),
 		kmsKeyID: kmsKeyID,
 	}
+	for _, opt := range opts {
+		opt(ret)
+	}
+	return ret
 }
 
 func (k *kmsClient) Alg() string {
