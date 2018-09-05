@@ -6,5 +6,19 @@ jobs:
     working_directory: /go/src/github.com/marcinwyszynski/kmsjwt
     steps:
       - checkout
-      - run: go get -v -t -d ./...
-      - run: go test -v ./...
+
+      - run:
+          name: Get dependencies (go get)
+          command: go get -v -t -d ./...
+
+      - run:
+          name: Lint (go vet)
+          command: go vet ./...
+
+      - run:
+          name: Test (go test)
+          command: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - run:
+          name: Upload coverage data
+          command: bash <(curl -s https://codecov.io/bash)
