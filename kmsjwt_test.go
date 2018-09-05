@@ -78,7 +78,7 @@ func (s *KMSImplementationTestSuite) TestSignError() {
 	s.Empty(ret)
 }
 
-func (s *KMSImplementationTestSuite) TestVerifyOK() {
+func (s *KMSImplementationTestSuite) TestVerifyOKWithCache() {
 	plaintext, err := base64.StdEncoding.DecodeString("ve/CWUJr0IbREmEIrDlVpsFRZMofWR4Icux8SeRALmo=")
 	s.NoError(err)
 	s.mockAPI.On(
@@ -93,10 +93,39 @@ func (s *KMSImplementationTestSuite) TestVerifyOK() {
 			}
 			return true
 		}),
-	).Return(&kms.DecryptOutput{
+	).Once().Return(&kms.DecryptOutput{
 		KeyId:     aws.String(s.keyID),
 		Plaintext: plaintext,
 	}, nil)
+	s.NoError(s.sut.Verify("signing", "YmFjb24K", nil))
+
+	// Ensure cache is warmed.
+	s.Equal("YmFjb24K", s.sut.(*kmsClient).cache["signing"])
+	s.NoError(s.sut.Verify("signing", "YmFjb24K", nil))
+}
+
+func (s *KMSImplementationTestSuite) TestVerifyOKWithoutCache() {
+	s.sut = New(s.mockAPI, s.keyID, DisableCache)
+	plaintext, err := base64.StdEncoding.DecodeString("ve/CWUJr0IbREmEIrDlVpsFRZMofWR4Icux8SeRALmo=")
+	s.NoError(err)
+	s.mockAPI.On(
+		"Decrypt",
+		mock.MatchedBy(func(input interface{}) bool {
+			decryptInput, ok := input.(*kms.DecryptInput)
+			if !ok {
+				return false
+			}
+			if string(decryptInput.CiphertextBlob) != "bacon\n" {
+				return false
+			}
+			return true
+		}),
+	).Twice().Return(&kms.DecryptOutput{
+		KeyId:     aws.String(s.keyID),
+		Plaintext: plaintext,
+	}, nil)
+	s.NoError(s.sut.Verify("signing", "YmFjb24K", nil))
+	s.Nil(s.sut.(*kmsClient).cache)
 	s.NoError(s.sut.Verify("signing", "YmFjb24K", nil))
 }
 

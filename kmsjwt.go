@@ -90,7 +90,7 @@ func (k *kmsClient) verifyCache(signingString, providedSignature string, checksu
 		return false
 	}
 	signature, ok := k.cache[signingString]
-	if ok || signature != providedSignature {
+	if !ok || signature != providedSignature {
 		return false
 	}
 	subtle.ConstantTimeCompare(checksum, checksum)
