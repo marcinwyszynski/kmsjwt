@@ -1,6 +1,7 @@
 package kmsjwt
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -49,17 +50,25 @@ func (k *kmsClient) Alg() string {
 	return kmsAlgorighm
 }
 
-func (k *kmsClient) Sign(signingString string, _ interface{}) (string, error) {
+func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) {
+	ctx, ok := key.(context.Context)
+	if !ok {
+		return "", errors.New("key is not a context")
+	}
 	checksum := sha256Checksum(signingString)
 	input := &kms.EncryptInput{KeyId: aws.String(k.kmsKeyID), Plaintext: checksum}
-	output, err := k.Encrypt(input)
+	output, err := k.EncryptWithContext(ctx, input)
 	if err != nil {
 		return "", jwt.ErrInvalidKey
 	}
 	return base64.StdEncoding.EncodeToString(output.CiphertextBlob), nil
 }
 
-func (k *kmsClient) Verify(signingString, providedSignature string, _ interface{}) error {
+func (k *kmsClient) Verify(signingString, providedSignature string, key interface{}) error {
+	ctx, ok := key.(context.Context)
+	if !ok {
+		return errors.New("key is not a context")
+	}
 	checksum := sha256Checksum(signingString)
 	if k.verifyCache(signingString, providedSignature, checksum) {
 		return nil
@@ -68,7 +77,7 @@ func (k *kmsClient) Verify(signingString, providedSignature string, _ interface{
 	if err != nil {
 		return err
 	}
-	output, err := k.Decrypt(&kms.DecryptInput{CiphertextBlob: ciphertext})
+	output, err := k.DecryptWithContext(ctx, &kms.DecryptInput{CiphertextBlob: ciphertext})
 	if err != nil {
 		return ErrKmsVerification
 	}

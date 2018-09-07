@@ -6,3 +6,5 @@
 [![codecov](https://codecov.io/gh/marcinwyszynski/kmsjwt/branch/master/graph/badge.svg)](https://codecov.io/gh/marcinwyszynski/kmsjwt)
 
 This little utility library provides an [AWS KMS](https://aws.amazon.com/kms/)-based implementation of [`jwt.SigningMethod`](https://godoc.org/github.com/dgrijalva/jwt-go#SigningMethod).
+
+You will be using an instance of `context.Context` as the encryption key.
