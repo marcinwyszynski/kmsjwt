@@ -120,7 +120,9 @@ func (s *KMSImplementationTestSuite) TestVerifyOKWithCache() {
 	s.NoError(s.sut.Verify("signing", "YmFjb24K", s.ctx))
 
 	// Ensure cache is warmed.
-	s.Equal("YmFjb24K", s.sut.(*kmsClient).cache["signing"])
+	value, ok := s.sut.(*kmsClient).cache.Get("signing")
+	s.True(ok)
+	s.Equal("YmFjb24K", value.(string))
 	s.NoError(s.sut.Verify("signing", "YmFjb24K", s.ctx))
 }
 
