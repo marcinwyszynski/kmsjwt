@@ -7,11 +7,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/kms/kmsiface"
 	"github.com/dgrijalva/jwt-go"
+	cache "github.com/patrickmn/go-cache"
 )
 
 const kmsAlgorighm = "KMS"
@@ -21,27 +23,27 @@ var ErrKmsVerification = errors.New("kms: verification error")
 
 type kmsClient struct {
 	kmsiface.KMSAPI
-	cache    map[string]string
-	kmsKeyID string
-}
-
-// Option is a function that modifies the way the verification method works.
-type Option func(*kmsClient)
-
-// DisableCache disables cache on the client (on by default).
-func DisableCache(k *kmsClient) {
-	k.cache = nil
+	cache             *cache.Cache
+	kmsKeyID          string
+	withCache         bool
+	defaultExpiration time.Duration
+	cleanupInterval   time.Duration
 }
 
 // New provides a KMS-based implementation of JWT signing method.
 func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMethod {
 	ret := &kmsClient{
-		KMSAPI:   client,
-		cache:    make(map[string]string),
-		kmsKeyID: kmsKeyID,
+		KMSAPI:            client,
+		kmsKeyID:          kmsKeyID,
+		withCache:         true,
+		defaultExpiration: time.Hour,
+		cleanupInterval:   time.Minute,
 	}
 	for _, opt := range opts {
 		opt(ret)
+	}
+	if ret.withCache {
+		ret.cache = cache.New(ret.defaultExpiration, ret.cleanupInterval)
 	}
 	return ret
 }
@@ -89,7 +91,7 @@ func (k *kmsClient) Verify(signingString, providedSignature string, key interfac
 		return ErrKmsVerification
 	}
 	if k.cache != nil {
-		k.cache[signingString] = providedSignature
+		k.cache.SetDefault(signingString, providedSignature)
 	}
 	return nil
 }
@@ -98,8 +100,8 @@ func (k *kmsClient) verifyCache(signingString, providedSignature string, checksu
 	if k.cache == nil {
 		return false
 	}
-	signature, ok := k.cache[signingString]
-	if !ok || signature != providedSignature {
+	signature, ok := k.cache.Get(signingString)
+	if !ok || signature.(string) != providedSignature {
 		return false
 	}
 	subtle.ConstantTimeCompare(checksum, checksum)
