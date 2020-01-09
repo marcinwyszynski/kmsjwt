@@ -36,7 +36,7 @@ func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMet
 		withCache:         true,
 		defaultExpiration: time.Hour,
 		cleanupInterval:   time.Minute,
-		signingAlgorithm:  kms.AlgorithmSpecRsaesOaepSha256,
+		signingAlgorithm:  kms.SigningAlgorithmSpecRsassaPssSha512,
 	}
 	for _, opt := range opts {
 		opt(ret)
