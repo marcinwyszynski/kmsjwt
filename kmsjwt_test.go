@@ -2,9 +2,7 @@ package kmsjwt
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -21,14 +19,14 @@ type mockKMS struct {
 	kmsiface.KMSAPI
 }
 
-func (m *mockKMS) DecryptWithContext(ctx aws.Context, input *kms.DecryptInput, opts ...request.Option) (*kms.DecryptOutput, error) {
+func (m *mockKMS) SignWithContext(ctx aws.Context, input *kms.SignInput, opts ...request.Option) (*kms.SignOutput, error) {
 	args := m.Called(ctx, input, opts)
-	return args.Get(0).(*kms.DecryptOutput), args.Error(1)
+	return args.Get(0).(*kms.SignOutput), args.Error(1)
 }
 
-func (m *mockKMS) EncryptWithContext(ctx aws.Context, input *kms.EncryptInput, opts ...request.Option) (*kms.EncryptOutput, error) {
+func (m *mockKMS) VerifyWithContext(ctx aws.Context, input *kms.VerifyInput, opts ...request.Option) (*kms.VerifyOutput, error) {
 	args := m.Called(ctx, input, opts)
-	return args.Get(0).(*kms.EncryptOutput), args.Error(1)
+	return args.Get(0).(*kms.VerifyOutput), args.Error(1)
 }
 
 type KMSImplementationTestSuite struct {
@@ -51,140 +49,207 @@ func (s *KMSImplementationTestSuite) TestAlg() {
 	s.Equal("KMS", s.sut.Alg())
 }
 
-func (s *KMSImplementationTestSuite) TestSignOK() {
-	s.mockAPI.On(
-		"EncryptWithContext",
-		s.ctx,
-		mock.MatchedBy(func(input interface{}) bool {
-			encryptInput, ok := input.(*kms.EncryptInput)
-			if !ok {
-				return false
-			}
-			if *encryptInput.KeyId != s.keyID {
-				return false
-			}
-			if fmt.Sprintf("%x", encryptInput.Plaintext) != "96d62e2abd3e42de5f50330fb8efc4c5599835278077b21e9aa0b33c1df07a1c" {
-				return false
-			}
-			return true
-		}),
-		[]request.Option(nil),
-	).Return(&kms.EncryptOutput{
-		CiphertextBlob: []byte("secret"),
-		KeyId:          aws.String(s.keyID),
-	}, nil)
-	ret, err := s.sut.Sign("plaintext", s.ctx)
-	s.NoError(err)
-	s.Equal("c2VjcmV0", ret)
+func (s *KMSImplementationTestSuite) TestSign_OK() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	s.withSignRequest(signingString, signature, nil)
+
+	ret, err := s.sut.Sign(signingString, s.ctx)
+
+	// Ensuring we got the right returns.
+	s.Require().NoError(err)
+	s.EqualValues(signature, ret)
+
+	// Ensuring that the signature is cached.
+	s.ensureCached(signingString, signature)
 }
 
-func (s *KMSImplementationTestSuite) TestSignError() {
-	s.mockAPI.On(
-		"EncryptWithContext",
-		s.ctx,
-		mock.AnythingOfType("*kms.EncryptInput"),
-		[]request.Option(nil),
-	).Return((*kms.EncryptOutput)(nil), errors.New("bacon"))
-	ret, err := s.sut.Sign("plaintext", s.ctx)
+func (s *KMSImplementationTestSuite) TestSign_KMSError() {
+	const signingString = "signingString"
+
+	s.withSignRequest(signingString, "signature", errors.New("bacon"))
+
+	ret, err := s.sut.Sign(signingString, s.ctx)
+
+	// Ensuring we got the right returns.
+	s.Require().Empty(ret)
 	s.EqualError(err, "key is invalid")
-	s.Empty(ret)
+
+	// Ensuring that the signature is not cached.
+	s.ensureNotCached(signingString)
 }
 
-func (s *KMSImplementationTestSuite) TestSignNotContext() {
-	ret, err := s.sut.Sign("plaintext", "bacon")
+func (s *KMSImplementationTestSuite) TestSign_KeyNotAContext() {
+	ret, err := s.sut.Sign("signingString", "bacon")
+
+	s.Require().Empty(ret)
 	s.EqualError(err, "key is not a context")
-	s.Empty(ret)
 }
 
-func (s *KMSImplementationTestSuite) TestVerifyOKWithCache() {
-	plaintext, err := base64.StdEncoding.DecodeString("ve/CWUJr0IbREmEIrDlVpsFRZMofWR4Icux8SeRALmo=")
-	s.NoError(err)
-	s.mockAPI.On(
-		"DecryptWithContext",
-		s.ctx,
-		mock.MatchedBy(func(input interface{}) bool {
-			decryptInput, ok := input.(*kms.DecryptInput)
-			if !ok {
-				return false
-			}
-			if string(decryptInput.CiphertextBlob) != "bacon\n" {
-				return false
-			}
-			return true
-		}),
-		[]request.Option(nil),
-	).Once().Return(&kms.DecryptOutput{
-		KeyId:     aws.String(s.keyID),
-		Plaintext: plaintext,
-	}, nil)
-	s.NoError(s.sut.Verify("signing", "YmFjb24K", s.ctx))
+func (s *KMSImplementationTestSuite) TestVerify_CacheHit() {
+	const signingString = "signingString"
+	const signature = "signature"
 
-	// Ensure cache is warmed.
-	value, ok := s.sut.(*kmsClient).cache.Get("signing")
-	s.True(ok)
-	s.Equal("YmFjb24K", value.(string))
-	s.NoError(s.sut.Verify("signing", "YmFjb24K", s.ctx))
+	s.sut.(*kmsClient).cache.SetDefault(signingString, []byte(signature))
+
+	// Ensuring that there's no error.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().NoError(err)
 }
 
-func (s *KMSImplementationTestSuite) TestVerifyOKWithoutCache() {
-	s.sut = New(s.mockAPI, s.keyID, DisableCache)
-	plaintext, err := base64.StdEncoding.DecodeString("ve/CWUJr0IbREmEIrDlVpsFRZMofWR4Icux8SeRALmo=")
-	s.NoError(err)
-	s.mockAPI.On(
-		"DecryptWithContext",
-		s.ctx,
-		mock.MatchedBy(func(input interface{}) bool {
-			decryptInput, ok := input.(*kms.DecryptInput)
-			if !ok {
-				return false
-			}
-			if string(decryptInput.CiphertextBlob) != "bacon\n" {
-				return false
-			}
-			return true
-		}),
-		[]request.Option(nil),
-	).Twice().Return(&kms.DecryptOutput{
-		KeyId:     aws.String(s.keyID),
-		Plaintext: plaintext,
-	}, nil)
-	s.NoError(s.sut.Verify("signing", "YmFjb24K", s.ctx))
-	s.Nil(s.sut.(*kmsClient).cache)
-	s.NoError(s.sut.Verify("signing", "YmFjb24K", s.ctx))
+func (s *KMSImplementationTestSuite) TestVerify_CacheMiss() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	// Ensure that the cache does not contain our entry.
+	_, isCached := s.sut.(*kmsClient).cache.Get(signingString)
+	s.Require().False(isCached)
+
+	s.withVerifyRequest(signingString, signature, aws.Bool(true), nil)
+
+	// Ensuring that there's no error.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().NoError(err)
+
+	// Ensuring that the signature is cached.
+	s.ensureCached(signingString, signature)
 }
 
-func (s *KMSImplementationTestSuite) TestVerifyDecryptFails() {
-	s.mockAPI.On(
-		"DecryptWithContext",
-		s.ctx,
-		mock.AnythingOfType("*kms.DecryptInput"),
-		[]request.Option(nil),
-	).Return((*kms.DecryptOutput)(nil), errors.New("bacon"))
-	s.EqualError(s.sut.Verify("signing", "YmFjb24K", s.ctx), "kms: verification error")
+func (s *KMSImplementationTestSuite) TestVerify_CacheInvalidType() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	// Let's put something of an unexpected type in our cache.
+	s.sut.(*kmsClient).cache.SetDefault(signingString, 13)
+
+	s.withVerifyRequest(signingString, signature, aws.Bool(true), nil)
+
+	// Ensuring that there's no error.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().NoError(err)
+
+	// Ensuring that the correct thing is cached this time.
+	s.ensureCached(signingString, signature)
 }
 
-func (s *KMSImplementationTestSuite) TestVerifyDifferentKey() {
-	s.mockAPI.On(
-		"DecryptWithContext",
-		s.ctx,
-		mock.AnythingOfType("*kms.DecryptInput"),
-		[]request.Option(nil),
-	).Return(&kms.DecryptOutput{KeyId: aws.String("huh?")}, nil)
-	s.EqualError(s.sut.Verify("signing", "YmFjb24K", s.ctx), "key is invalid")
+func (s *KMSImplementationTestSuite) TestVerify_CacheWrongValue() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	// Let's put something of an unexpected type in our cache.
+	s.sut.(*kmsClient).cache.SetDefault(signingString, []byte("surprise"))
+
+	s.withVerifyRequest(signingString, signature, aws.Bool(true), nil)
+
+	// Ensuring that there's no error.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().NoError(err)
+
+	// Ensuring that the correct thing is cached this time.
+	s.ensureCached(signingString, signature)
 }
 
-func (s *KMSImplementationTestSuite) TestVerifyDoesNotCompare() {
-	s.mockAPI.On(
-		"DecryptWithContext",
-		s.ctx,
-		mock.AnythingOfType("*kms.DecryptInput"),
-		[]request.Option(nil),
-	).Return(&kms.DecryptOutput{KeyId: aws.String(s.keyID), Plaintext: []byte("wrong")}, nil)
-	s.EqualError(s.sut.Verify("signing", "YmFjb24K", s.ctx), "kms: verification error")
+func (s *KMSImplementationTestSuite) TestVerify_KMSError() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	s.withVerifyRequest(signingString, signature, nil, errors.New("bacon"))
+
+	// Ensuring that the right error is returned.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().Equal(ErrKmsVerification, err)
+
+	// Ensuring that the signature is not cached.
+	s.ensureNotCached(signingString)
 }
 
-func (s *KMSImplementationTestSuite) TestVerifyNotContext() {
+// According to AWS docs this should never happen, but let's be on the safe
+// side.
+func (s *KMSImplementationTestSuite) TestVerify_NilSignatureValid() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	s.withVerifyRequest(signingString, signature, nil, nil)
+
+	// Ensuring that the right error is returned.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().Equal(ErrKmsVerification, err)
+
+	// Ensuring that the signature is not cached.
+	s.ensureNotCached(signingString)
+}
+
+// According to AWS docs this should never happen, but let's be on the safe
+// side.
+func (s *KMSImplementationTestSuite) TestVerify_SignatureNotValid() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	s.withVerifyRequest(signingString, signature, aws.Bool(false), nil)
+
+	// Ensuring that the right error is returned.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().Equal(ErrKmsVerification, err)
+
+	// Ensuring that the signature is not cached.
+	s.ensureNotCached(signingString)
+}
+
+func (s *KMSImplementationTestSuite) TestVerify_NotAContext() {
 	s.EqualError(s.sut.Verify("signing", "signature", "not context"), "key is not a context")
+}
+
+func (s *KMSImplementationTestSuite) ensureCached(signingString, signature string) {
+	cachedSignature, isCached := s.sut.(*kmsClient).cache.Get(signingString)
+	s.Require().True(isCached)
+	s.Require().IsType([]byte(nil), cachedSignature)
+	s.Require().EqualValues(signature, cachedSignature)
+}
+
+func (s *KMSImplementationTestSuite) ensureNotCached(signingString string) {
+	// Ensuring that the signature is not cached.
+	_, isCached := s.sut.(*kmsClient).cache.Get(signingString)
+	s.Require().False(isCached)
+}
+
+func (s *KMSImplementationTestSuite) withSignRequest(signingString, signature string, err error) {
+	s.mockAPI.On(
+		"SignWithContext",
+		s.ctx,
+		mock.MatchedBy(func(in interface{}) bool {
+			input, ok := in.(*kms.SignInput)
+
+			s.Require().True(ok)
+			s.Require().Equal(s.keyID, *input.KeyId)
+			s.Require().EqualValues(signingString, input.Message)
+			s.Require().Equal("RAW", *input.MessageType)
+			s.Require().Equal(kms.AlgorithmSpecRsaesOaepSha256, *input.SigningAlgorithm)
+
+			return true
+		}),
+		[]request.Option(nil),
+	).Return(&kms.SignOutput{Signature: []byte(signature)}, err)
+}
+
+func (s *KMSImplementationTestSuite) withVerifyRequest(signingString, signature string, valid *bool, err error) {
+	s.mockAPI.On(
+		"VerifyWithContext",
+		s.ctx,
+		mock.MatchedBy(func(in interface{}) bool {
+			input, ok := in.(*kms.VerifyInput)
+
+			s.Require().True(ok)
+			s.Require().Equal(s.keyID, *input.KeyId)
+			s.Require().EqualValues(signingString, input.Message)
+			s.Require().Equal("RAW", *input.MessageType)
+			s.Require().EqualValues(signature, input.Signature)
+			s.Require().Equal(kms.AlgorithmSpecRsaesOaepSha256, *input.SigningAlgorithm)
+
+			return true
+		}),
+		[]request.Option(nil),
+	).Return(&kms.VerifyOutput{SignatureValid: valid}, err)
 }
 
 func TestKMSImplementation(t *testing.T) {

@@ -2,11 +2,8 @@ package kmsjwt
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -28,6 +25,7 @@ type kmsClient struct {
 	withCache         bool
 	defaultExpiration time.Duration
 	cleanupInterval   time.Duration
+	signingAlgorithm  string
 }
 
 // New provides a KMS-based implementation of JWT signing method.
@@ -38,6 +36,7 @@ func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMet
 		withCache:         true,
 		defaultExpiration: time.Hour,
 		cleanupInterval:   time.Minute,
+		signingAlgorithm:  kms.AlgorithmSpecRsaesOaepSha256,
 	}
 	for _, opt := range opts {
 		opt(ret)
@@ -57,58 +56,70 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 	if !ok {
 		return "", errors.New("key is not a context")
 	}
-	checksum := sha256Checksum(signingString)
-	input := &kms.EncryptInput{KeyId: aws.String(k.kmsKeyID), Plaintext: checksum}
-	output, err := k.EncryptWithContext(ctx, input)
+
+	out, err := k.SignWithContext(ctx, &kms.SignInput{
+		KeyId:            aws.String(k.kmsKeyID),
+		Message:          []byte(signingString),
+		MessageType:      aws.String("RAW"),
+		SigningAlgorithm: aws.String(k.signingAlgorithm),
+	})
+
 	if err != nil {
 		return "", jwt.ErrInvalidKey
 	}
-	return base64.StdEncoding.EncodeToString(output.CiphertextBlob), nil
+
+	if k.cache != nil {
+		k.cache.SetDefault(signingString, out.Signature)
+	}
+
+	return string(out.Signature), nil
 }
 
-func (k *kmsClient) Verify(signingString, providedSignature string, key interface{}) error {
+func (k *kmsClient) Verify(signingString, stringSignature string, key interface{}) error {
 	ctx, ok := key.(context.Context)
 	if !ok {
 		return errors.New("key is not a context")
 	}
-	checksum := sha256Checksum(signingString)
-	if k.verifyCache(signingString, providedSignature, checksum) {
+
+	signature := []byte(stringSignature)
+
+	if k.verifyCache(signingString, signature) {
 		return nil
 	}
-	ciphertext, err := base64.StdEncoding.DecodeString(providedSignature)
-	if err != nil {
-		return err
-	}
-	output, err := k.DecryptWithContext(ctx, &kms.DecryptInput{CiphertextBlob: ciphertext})
-	if err != nil {
+
+	out, err := k.VerifyWithContext(ctx, &kms.VerifyInput{
+		KeyId:            aws.String(k.kmsKeyID),
+		Message:          []byte(signingString),
+		MessageType:      aws.String("RAW"),
+		Signature:        signature,
+		SigningAlgorithm: aws.String(k.signingAlgorithm),
+	})
+
+	if err != nil || out.SignatureValid == nil || !(*out.SignatureValid) {
 		return ErrKmsVerification
 	}
-	// The output keyID is the full ARN, the internal ID is just the key ID.
-	if !strings.HasSuffix(*output.KeyId, k.kmsKeyID) {
-		return jwt.ErrInvalidKey
-	}
-	if subtle.ConstantTimeCompare(output.Plaintext, checksum) != 1 {
-		return ErrKmsVerification
-	}
+
 	if k.cache != nil {
-		k.cache.SetDefault(signingString, providedSignature)
+		k.cache.SetDefault(signingString, signature)
 	}
+
 	return nil
 }
 
-func (k *kmsClient) verifyCache(signingString, providedSignature string, checksum []byte) bool {
+func (k *kmsClient) verifyCache(signingString string, providedSignature []byte) bool {
 	if k.cache == nil {
 		return false
 	}
-	signature, ok := k.cache.Get(signingString)
-	if !ok || signature.(string) != providedSignature {
+
+	untypedCached, isCached := k.cache.Get(signingString)
+	if !isCached {
 		return false
 	}
-	subtle.ConstantTimeCompare(checksum, checksum)
-	return true
-}
 
-func sha256Checksum(signingString string) []byte {
-	ret := sha256.Sum256([]byte(signingString))
-	return ret[:]
+	typedCached, typeOK := untypedCached.([]byte)
+	if !typeOK {
+		return false
+	}
+
+	return subtle.ConstantTimeCompare(typedCached, providedSignature) == 1
 }

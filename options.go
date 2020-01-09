@@ -25,3 +25,11 @@ func WithCleanupInterval(cleanupInterval time.Duration) Option {
 		k.cleanupInterval = cleanupInterval
 	}
 }
+
+// WithSigningAlgorithm changes the algorighm used to sign and verify tokens. By
+// default, "RSAES_OAEP_SHA_256" is used.
+func WithSigningAlgorithm(algorighm string) Option {
+	return func(k *kmsClient) {
+		k.signingAlgorithm = algorighm
+	}
+}
