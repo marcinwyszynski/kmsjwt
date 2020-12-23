@@ -38,12 +38,15 @@ func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMet
 		cleanupInterval:   time.Minute,
 		signingAlgorithm:  kms.SigningAlgorithmSpecRsassaPssSha512,
 	}
+
 	for _, opt := range opts {
 		opt(ret)
 	}
+
 	if ret.withCache {
 		ret.cache = cache.New(ret.defaultExpiration, ret.cleanupInterval)
 	}
+
 	return ret
 }
 
@@ -64,7 +67,9 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 		SigningAlgorithm: aws.String(k.signingAlgorithm),
 	})
 
-	if err != nil {
+	if err != nil && errors.Is(err, context.Canceled) {
+		return "", err
+	} else if err != nil {
 		return "", jwt.ErrInvalidKey
 	}
 
@@ -95,7 +100,9 @@ func (k *kmsClient) Verify(signingString, stringSignature string, key interface{
 		SigningAlgorithm: aws.String(k.signingAlgorithm),
 	})
 
-	if err != nil || out.SignatureValid == nil || !(*out.SignatureValid) {
+	if err != nil && errors.Is(err, context.Canceled) {
+		return err
+	} else if err != nil || out.SignatureValid == nil || !(*out.SignatureValid) {
 		return ErrKmsVerification
 	}
 

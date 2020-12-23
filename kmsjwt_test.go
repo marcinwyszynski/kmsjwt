@@ -80,6 +80,21 @@ func (s *KMSImplementationTestSuite) TestSign_KMSError() {
 	s.ensureNotCached(signingString)
 }
 
+func (s *KMSImplementationTestSuite) TestSign_ContextCanceled() {
+	const signingString = "signingString"
+
+	s.withSignRequest(signingString, "signature", context.Canceled)
+
+	ret, err := s.sut.Sign(signingString, s.ctx)
+
+	// Ensuring we got the right returns.
+	s.Require().Empty(ret)
+	s.Equal(context.Canceled, err)
+
+	// Ensuring that the signature is not cached.
+	s.ensureNotCached(signingString)
+}
+
 func (s *KMSImplementationTestSuite) TestSign_KeyNotAContext() {
 	ret, err := s.sut.Sign("signingString", "bacon")
 
@@ -159,6 +174,20 @@ func (s *KMSImplementationTestSuite) TestVerify_KMSError() {
 	// Ensuring that the right error is returned.
 	err := s.sut.Verify(signingString, signature, s.ctx)
 	s.Require().Equal(ErrKmsVerification, err)
+
+	// Ensuring that the signature is not cached.
+	s.ensureNotCached(signingString)
+}
+
+func (s *KMSImplementationTestSuite) TestVerify_ContextCanceled() {
+	const signingString = "signingString"
+	const signature = "signature"
+
+	s.withVerifyRequest(signingString, signature, nil, context.Canceled)
+
+	// Ensuring that the right error is returned.
+	err := s.sut.Verify(signingString, signature, s.ctx)
+	s.Require().Equal(context.Canceled, err)
 
 	// Ensuring that the signature is not cached.
 	s.ensureNotCached(signingString)
