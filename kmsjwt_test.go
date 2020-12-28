@@ -2,6 +2,7 @@ package kmsjwt
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"testing"
 
@@ -59,10 +60,10 @@ func (s *KMSImplementationTestSuite) TestSign_OK() {
 
 	// Ensuring we got the right returns.
 	s.Require().NoError(err)
-	s.EqualValues(signature, ret)
+	s.EqualValues(base64.StdEncoding.EncodeToString([]byte(signature)), ret)
 
 	// Ensuring that the signature is cached.
-	s.ensureCached(signingString, signature)
+	s.ensureCached(signingString, base64.StdEncoding.EncodeToString([]byte(signature)))
 }
 
 func (s *KMSImplementationTestSuite) TestSign_KMSError() {
@@ -104,9 +105,9 @@ func (s *KMSImplementationTestSuite) TestSign_KeyNotAContext() {
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheHit() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
-	s.sut.(*kmsClient).cache.SetDefault(signingString, []byte(signature))
+	s.sut.(*kmsClient).cache.SetDefault(signingString, signature)
 
 	// Ensuring that there's no error.
 	err := s.sut.Verify(signingString, signature, s.ctx)
@@ -115,7 +116,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheHit() {
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheMiss() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
 	// Ensure that the cache does not contain our entry.
 	_, isCached := s.sut.(*kmsClient).cache.Get(signingString)
@@ -133,7 +134,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheMiss() {
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheInvalidType() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
 	// Let's put something of an unexpected type in our cache.
 	s.sut.(*kmsClient).cache.SetDefault(signingString, 13)
@@ -150,7 +151,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheInvalidType() {
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheWrongValue() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
 	// Let's put something of an unexpected type in our cache.
 	s.sut.(*kmsClient).cache.SetDefault(signingString, []byte("surprise"))
@@ -167,7 +168,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheWrongValue() {
 
 func (s *KMSImplementationTestSuite) TestVerify_KMSError() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
 	s.withVerifyRequest(signingString, signature, nil, errors.New("bacon"))
 
@@ -181,7 +182,7 @@ func (s *KMSImplementationTestSuite) TestVerify_KMSError() {
 
 func (s *KMSImplementationTestSuite) TestVerify_ContextCanceled() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
 	s.withVerifyRequest(signingString, signature, nil, context.Canceled)
 
@@ -197,7 +198,7 @@ func (s *KMSImplementationTestSuite) TestVerify_ContextCanceled() {
 // side.
 func (s *KMSImplementationTestSuite) TestVerify_NilSignatureValid() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
 	s.withVerifyRequest(signingString, signature, nil, nil)
 
@@ -213,7 +214,7 @@ func (s *KMSImplementationTestSuite) TestVerify_NilSignatureValid() {
 // side.
 func (s *KMSImplementationTestSuite) TestVerify_SignatureNotValid() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := base64.StdEncoding.EncodeToString([]byte("signature"))
 
 	s.withVerifyRequest(signingString, signature, aws.Bool(false), nil)
 
@@ -232,7 +233,7 @@ func (s *KMSImplementationTestSuite) TestVerify_NotAContext() {
 func (s *KMSImplementationTestSuite) ensureCached(signingString, signature string) {
 	cachedSignature, isCached := s.sut.(*kmsClient).cache.Get(signingString)
 	s.Require().True(isCached)
-	s.Require().IsType([]byte(nil), cachedSignature)
+	s.Require().IsType("", cachedSignature)
 	s.Require().EqualValues(signature, cachedSignature)
 }
 
@@ -272,7 +273,7 @@ func (s *KMSImplementationTestSuite) withVerifyRequest(signingString, signature 
 			s.Require().Equal(s.keyID, *input.KeyId)
 			s.Require().EqualValues(signingString, input.Message)
 			s.Require().Equal("RAW", *input.MessageType)
-			s.Require().EqualValues(signature, input.Signature)
+			s.Require().EqualValues("signature", input.Signature)
 			s.Require().Equal(kms.SigningAlgorithmSpecRsassaPssSha512, *input.SigningAlgorithm)
 
 			return true

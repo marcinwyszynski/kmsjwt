@@ -3,6 +3,7 @@ package kmsjwt
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"time"
 
@@ -73,11 +74,13 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 		return "", jwt.ErrInvalidKey
 	}
 
+	signature := base64.StdEncoding.EncodeToString(out.Signature)
+
 	if k.cache != nil {
-		k.cache.SetDefault(signingString, out.Signature)
+		k.cache.SetDefault(signingString, signature)
 	}
 
-	return string(out.Signature), nil
+	return signature, nil
 }
 
 func (k *kmsClient) Verify(signingString, stringSignature string, key interface{}) error {
@@ -86,9 +89,12 @@ func (k *kmsClient) Verify(signingString, stringSignature string, key interface{
 		return errors.New("key is not a context")
 	}
 
-	signature := []byte(stringSignature)
+	signature, err := base64.StdEncoding.DecodeString(stringSignature)
+	if err != nil {
+		return jwt.ErrSignatureInvalid
+	}
 
-	if k.verifyCache(signingString, signature) {
+	if k.verifyCache(signingString, stringSignature) {
 		return nil
 	}
 
@@ -107,13 +113,13 @@ func (k *kmsClient) Verify(signingString, stringSignature string, key interface{
 	}
 
 	if k.cache != nil {
-		k.cache.SetDefault(signingString, signature)
+		k.cache.SetDefault(signingString, stringSignature)
 	}
 
 	return nil
 }
 
-func (k *kmsClient) verifyCache(signingString string, providedSignature []byte) bool {
+func (k *kmsClient) verifyCache(signingString, providedSignature string) bool {
 	if k.cache == nil {
 		return false
 	}
@@ -123,10 +129,10 @@ func (k *kmsClient) verifyCache(signingString string, providedSignature []byte) 
 		return false
 	}
 
-	typedCached, typeOK := untypedCached.([]byte)
+	typedCached, typeOK := untypedCached.(string)
 	if !typeOK {
 		return false
 	}
 
-	return subtle.ConstantTimeCompare(typedCached, providedSignature) == 1
+	return subtle.ConstantTimeCompare([]byte(typedCached), []byte(providedSignature)) == 1
 }
