@@ -2,6 +2,7 @@ package kmsjwt
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"testing"
 
@@ -51,7 +52,7 @@ func (s *KMSImplementationTestSuite) TestAlg() {
 
 func (s *KMSImplementationTestSuite) TestSign_OK() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
 	s.withSignRequest(signingString, signature, nil)
 
@@ -59,7 +60,7 @@ func (s *KMSImplementationTestSuite) TestSign_OK() {
 
 	// Ensuring we got the right returns.
 	s.Require().NoError(err)
-	s.EqualValues(signature, ret)
+	s.EqualValues("c2lnbmF0dXJl", ret)
 
 	// Ensuring that the signature is cached.
 	s.ensureCached(signingString, signature)
@@ -68,7 +69,7 @@ func (s *KMSImplementationTestSuite) TestSign_OK() {
 func (s *KMSImplementationTestSuite) TestSign_KMSError() {
 	const signingString = "signingString"
 
-	s.withSignRequest(signingString, "signature", errors.New("bacon"))
+	s.withSignRequest(signingString, []byte("signature"), errors.New("bacon"))
 
 	ret, err := s.sut.Sign(signingString, s.ctx)
 
@@ -83,7 +84,7 @@ func (s *KMSImplementationTestSuite) TestSign_KMSError() {
 func (s *KMSImplementationTestSuite) TestSign_ContextCanceled() {
 	const signingString = "signingString"
 
-	s.withSignRequest(signingString, "signature", context.Canceled)
+	s.withSignRequest(signingString, []byte("signature"), context.Canceled)
 
 	ret, err := s.sut.Sign(signingString, s.ctx)
 
@@ -104,18 +105,18 @@ func (s *KMSImplementationTestSuite) TestSign_KeyNotAContext() {
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheHit() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
-	s.sut.(*kmsClient).cache.SetDefault(signingString, []byte(signature))
+	s.sut.(*kmsClient).cache.SetDefault(signingString, signature)
 
 	// Ensuring that there's no error.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().NoError(err)
 }
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheMiss() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
 	// Ensure that the cache does not contain our entry.
 	_, isCached := s.sut.(*kmsClient).cache.Get(signingString)
@@ -124,7 +125,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheMiss() {
 	s.withVerifyRequest(signingString, signature, aws.Bool(true), nil)
 
 	// Ensuring that there's no error.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().NoError(err)
 
 	// Ensuring that the signature is cached.
@@ -133,7 +134,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheMiss() {
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheInvalidType() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
 	// Let's put something of an unexpected type in our cache.
 	s.sut.(*kmsClient).cache.SetDefault(signingString, 13)
@@ -141,7 +142,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheInvalidType() {
 	s.withVerifyRequest(signingString, signature, aws.Bool(true), nil)
 
 	// Ensuring that there's no error.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().NoError(err)
 
 	// Ensuring that the correct thing is cached this time.
@@ -150,7 +151,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheInvalidType() {
 
 func (s *KMSImplementationTestSuite) TestVerify_CacheWrongValue() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
 	// Let's put something of an unexpected type in our cache.
 	s.sut.(*kmsClient).cache.SetDefault(signingString, []byte("surprise"))
@@ -158,7 +159,7 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheWrongValue() {
 	s.withVerifyRequest(signingString, signature, aws.Bool(true), nil)
 
 	// Ensuring that there's no error.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().NoError(err)
 
 	// Ensuring that the correct thing is cached this time.
@@ -167,12 +168,12 @@ func (s *KMSImplementationTestSuite) TestVerify_CacheWrongValue() {
 
 func (s *KMSImplementationTestSuite) TestVerify_KMSError() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
 	s.withVerifyRequest(signingString, signature, nil, errors.New("bacon"))
 
 	// Ensuring that the right error is returned.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().Equal(ErrKmsVerification, err)
 
 	// Ensuring that the signature is not cached.
@@ -181,12 +182,12 @@ func (s *KMSImplementationTestSuite) TestVerify_KMSError() {
 
 func (s *KMSImplementationTestSuite) TestVerify_ContextCanceled() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
-	s.withVerifyRequest(signingString, signature, nil, context.Canceled)
+	s.withVerifyRequest(signingString, []byte(signature), nil, context.Canceled)
 
 	// Ensuring that the right error is returned.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().Equal(context.Canceled, err)
 
 	// Ensuring that the signature is not cached.
@@ -197,12 +198,12 @@ func (s *KMSImplementationTestSuite) TestVerify_ContextCanceled() {
 // side.
 func (s *KMSImplementationTestSuite) TestVerify_NilSignatureValid() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
 	s.withVerifyRequest(signingString, signature, nil, nil)
 
 	// Ensuring that the right error is returned.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().Equal(ErrKmsVerification, err)
 
 	// Ensuring that the signature is not cached.
@@ -213,12 +214,12 @@ func (s *KMSImplementationTestSuite) TestVerify_NilSignatureValid() {
 // side.
 func (s *KMSImplementationTestSuite) TestVerify_SignatureNotValid() {
 	const signingString = "signingString"
-	const signature = "signature"
+	signature := []byte("signature")
 
 	s.withVerifyRequest(signingString, signature, aws.Bool(false), nil)
 
 	// Ensuring that the right error is returned.
-	err := s.sut.Verify(signingString, signature, s.ctx)
+	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
 	s.Require().Equal(ErrKmsVerification, err)
 
 	// Ensuring that the signature is not cached.
@@ -229,7 +230,7 @@ func (s *KMSImplementationTestSuite) TestVerify_NotAContext() {
 	s.EqualError(s.sut.Verify("signing", "signature", "not context"), "key is not a context")
 }
 
-func (s *KMSImplementationTestSuite) ensureCached(signingString, signature string) {
+func (s *KMSImplementationTestSuite) ensureCached(signingString string, signature []byte) {
 	cachedSignature, isCached := s.sut.(*kmsClient).cache.Get(signingString)
 	s.Require().True(isCached)
 	s.Require().IsType([]byte(nil), cachedSignature)
@@ -242,7 +243,7 @@ func (s *KMSImplementationTestSuite) ensureNotCached(signingString string) {
 	s.Require().False(isCached)
 }
 
-func (s *KMSImplementationTestSuite) withSignRequest(signingString, signature string, err error) {
+func (s *KMSImplementationTestSuite) withSignRequest(signingString string, signature []byte, err error) {
 	s.mockAPI.On(
 		"SignWithContext",
 		s.ctx,
@@ -258,10 +259,10 @@ func (s *KMSImplementationTestSuite) withSignRequest(signingString, signature st
 			return true
 		}),
 		[]request.Option(nil),
-	).Return(&kms.SignOutput{Signature: []byte(signature)}, err)
+	).Return(&kms.SignOutput{Signature: signature}, err)
 }
 
-func (s *KMSImplementationTestSuite) withVerifyRequest(signingString, signature string, valid *bool, err error) {
+func (s *KMSImplementationTestSuite) withVerifyRequest(signingString string, signature []byte, valid *bool, err error) {
 	s.mockAPI.On(
 		"VerifyWithContext",
 		s.ctx,

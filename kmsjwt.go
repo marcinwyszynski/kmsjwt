@@ -3,6 +3,7 @@ package kmsjwt
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"time"
 
@@ -77,7 +78,7 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 		k.cache.SetDefault(signingString, out.Signature)
 	}
 
-	return string(out.Signature), nil
+	return base64.StdEncoding.EncodeToString(out.Signature), nil
 }
 
 func (k *kmsClient) Verify(signingString, stringSignature string, key interface{}) error {
@@ -86,7 +87,10 @@ func (k *kmsClient) Verify(signingString, stringSignature string, key interface{
 		return errors.New("key is not a context")
 	}
 
-	signature := []byte(stringSignature)
+	signature, err := base64.StdEncoding.DecodeString(stringSignature)
+	if err != nil {
+		return errors.New("invalid signature encoding")
+	}
 
 	if k.verifyCache(signingString, signature) {
 		return nil
