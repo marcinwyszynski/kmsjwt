@@ -68,7 +68,7 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 	out, err := k.SignWithContext(ctx, &kms.SignInput{
 		KeyId:            aws.String(k.kmsKeyID),
 		Message:          checksum(signingString),
-		MessageType:      aws.String("RAW"),
+		MessageType:      aws.String("DIGEST"),
 		SigningAlgorithm: aws.String(k.signingAlgorithm),
 	})
 
@@ -103,7 +103,7 @@ func (k *kmsClient) Verify(signingString, stringSignature string, key interface{
 	out, err := k.VerifyWithContext(ctx, &kms.VerifyInput{
 		KeyId:            aws.String(k.kmsKeyID),
 		Message:          checksum(signingString),
-		MessageType:      aws.String("RAW"),
+		MessageType:      aws.String("DIGEST"),
 		Signature:        signature,
 		SigningAlgorithm: aws.String(k.signingAlgorithm),
 	})
