@@ -2,6 +2,7 @@ package kmsjwt
 
 import (
 	"context"
+	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
@@ -63,7 +64,7 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 
 	out, err := k.SignWithContext(ctx, &kms.SignInput{
 		KeyId:            aws.String(k.kmsKeyID),
-		Message:          []byte(signingString),
+		Message:          checksum(signingString),
 		MessageType:      aws.String("RAW"),
 		SigningAlgorithm: aws.String(k.signingAlgorithm),
 	})
@@ -98,7 +99,7 @@ func (k *kmsClient) Verify(signingString, stringSignature string, key interface{
 
 	out, err := k.VerifyWithContext(ctx, &kms.VerifyInput{
 		KeyId:            aws.String(k.kmsKeyID),
-		Message:          []byte(signingString),
+		Message:          checksum(signingString),
 		MessageType:      aws.String("RAW"),
 		Signature:        signature,
 		SigningAlgorithm: aws.String(k.signingAlgorithm),
@@ -133,4 +134,9 @@ func (k *kmsClient) verifyCache(signingString string, providedSignature []byte) 
 	}
 
 	return subtle.ConstantTimeCompare(typedCached, providedSignature) == 1
+}
+
+func checksum(in string) []byte {
+	out := sha512.Sum512([]byte(in))
+	return out[:]
 }
