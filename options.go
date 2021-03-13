@@ -10,6 +10,12 @@ func DisableCache(k *kmsClient) {
 	k.withCache = false
 }
 
+func WithAlgorithm(algorithm string) Option {
+	return func(k *kmsClient) {
+		k.algorithm = algorithm
+	}
+}
+
 // WithDefaultExpiration changes the default key expiration if the cache is
 // "on". By default, cache expires after an hour.
 func WithDefaultExpiration(defaultExpiration time.Duration) Option {
