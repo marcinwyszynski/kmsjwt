@@ -22,6 +22,8 @@ var ErrKmsVerification = errors.New("kms: verification error")
 
 type kmsClient struct {
 	kmsiface.KMSAPI
+
+	algorithm         string
 	cache             *cache.Cache
 	kmsKeyID          string
 	withCache         bool
@@ -34,6 +36,7 @@ type kmsClient struct {
 func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMethod {
 	ret := &kmsClient{
 		KMSAPI:            client,
+		algorithm:         kmsAlgorighm,
 		kmsKeyID:          kmsKeyID,
 		withCache:         true,
 		defaultExpiration: time.Hour,
@@ -53,7 +56,7 @@ func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMet
 }
 
 func (k *kmsClient) Alg() string {
-	return kmsAlgorighm
+	return k.algorithm
 }
 
 func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) {
