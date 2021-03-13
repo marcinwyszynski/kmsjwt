@@ -253,7 +253,7 @@ func (s *KMSImplementationTestSuite) withSignRequest(signingString string, signa
 			s.Require().True(ok)
 			s.Require().Equal(s.keyID, *input.KeyId)
 			s.Require().EqualValues(checksum(signingString), input.Message)
-			s.Require().Equal("RAW", *input.MessageType)
+			s.Require().Equal("DIGEST", *input.MessageType)
 			s.Require().Equal(kms.SigningAlgorithmSpecRsassaPssSha512, *input.SigningAlgorithm)
 
 			return true
@@ -272,7 +272,7 @@ func (s *KMSImplementationTestSuite) withVerifyRequest(signingString string, sig
 			s.Require().True(ok)
 			s.Require().Equal(s.keyID, *input.KeyId)
 			s.Require().EqualValues(checksum(signingString), input.Message)
-			s.Require().Equal("RAW", *input.MessageType)
+			s.Require().Equal("DIGEST", *input.MessageType)
 			s.Require().EqualValues(signature, input.Signature)
 			s.Require().Equal(kms.SigningAlgorithmSpecRsassaPssSha512, *input.SigningAlgorithm)
 
