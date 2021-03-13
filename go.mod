@@ -1,4 +1,4 @@
-module github.com/marcinwyszynski/kmsjwt
+module github.com/marcinwyszynski/kmsjwt/v2
 
 go 1.13
 
