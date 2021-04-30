@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/kms/kmsiface"
-	"github.com/dgrijalva/jwt-go"
 	cache "github.com/patrickmn/go-cache"
 )
 
@@ -20,7 +19,10 @@ const kmsAlgorighm = "KMS"
 // ErrKmsVerification is an error shown when KMS token verification fails.
 var ErrKmsVerification = errors.New("kms: verification error")
 
-type kmsClient struct {
+// ErrInvalidKey indicates taht the key is invalid.
+var ErrInvalidKey = errors.New("key is invalid")
+
+type KMSJWT struct {
 	kmsiface.KMSAPI
 
 	algorithm         string
@@ -33,8 +35,8 @@ type kmsClient struct {
 }
 
 // New provides a KMS-based implementation of JWT signing method.
-func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMethod {
-	ret := &kmsClient{
+func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) *KMSJWT {
+	ret := &KMSJWT{
 		KMSAPI:            client,
 		algorithm:         kmsAlgorighm,
 		kmsKeyID:          kmsKeyID,
@@ -55,11 +57,11 @@ func New(client kmsiface.KMSAPI, kmsKeyID string, opts ...Option) jwt.SigningMet
 	return ret
 }
 
-func (k *kmsClient) Alg() string {
+func (k *KMSJWT) Alg() string {
 	return k.algorithm
 }
 
-func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) {
+func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	ctx, ok := key.(context.Context)
 	if !ok {
 		return "", errors.New("key is not a context")
@@ -75,7 +77,7 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 	if err != nil && errors.Is(err, context.Canceled) {
 		return "", err
 	} else if err != nil {
-		return "", jwt.ErrInvalidKey
+		return "", ErrInvalidKey
 	}
 
 	if k.cache != nil {
@@ -85,7 +87,7 @@ func (k *kmsClient) Sign(signingString string, key interface{}) (string, error) 
 	return base64.StdEncoding.EncodeToString(out.Signature), nil
 }
 
-func (k *kmsClient) Verify(signingString, stringSignature string, key interface{}) error {
+func (k *KMSJWT) Verify(signingString, stringSignature string, key interface{}) error {
 	ctx, ok := key.(context.Context)
 	if !ok {
 		return errors.New("key is not a context")
@@ -121,7 +123,7 @@ func (k *kmsClient) Verify(signingString, stringSignature string, key interface{
 	return nil
 }
 
-func (k *kmsClient) verifyCache(signingString string, providedSignature []byte) bool {
+func (k *KMSJWT) verifyCache(signingString string, providedSignature []byte) bool {
 	if k.cache == nil {
 		return false
 	}
