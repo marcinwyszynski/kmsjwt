@@ -74,7 +74,7 @@ func (s *KMSImplementationTestSuite) TestSign_KMSError() {
 
 	// Ensuring we got the right returns.
 	s.Require().Empty(ret)
-	s.EqualError(err, "key is invalid")
+	s.EqualError(err, "key is invalid: bacon")
 
 	// Ensuring that the signature is not cached.
 	s.ensureNotCached(signingString)
@@ -173,7 +173,7 @@ func (s *KMSImplementationTestSuite) TestVerify_KMSError() {
 
 	// Ensuring that the right error is returned.
 	err := s.sut.Verify(signingString, base64.StdEncoding.EncodeToString(signature), s.ctx)
-	s.Require().Equal(ErrKmsVerification, err)
+	s.Require().Equal("kms: verification error: bacon", err.Error())
 
 	// Ensuring that the signature is not cached.
 	s.ensureNotCached(signingString)

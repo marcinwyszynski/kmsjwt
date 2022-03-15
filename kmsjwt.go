@@ -5,13 +5,14 @@ import (
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
+
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/kms/kmsiface"
 	cache "github.com/patrickmn/go-cache"
+	"github.com/pkg/errors"
 )
 
 const kmsAlgorighm = "KMS"
@@ -77,7 +78,7 @@ func (k *KMSJWT) Sign(signingString string, key interface{}) (string, error) {
 	if err != nil && errors.Is(err, context.Canceled) {
 		return "", err
 	} else if err != nil {
-		return "", ErrInvalidKey
+		return "", errors.Wrap(err, "key is invalid")
 	}
 
 	if k.cache != nil {
@@ -112,8 +113,10 @@ func (k *KMSJWT) Verify(signingString, stringSignature string, key interface{}) 
 
 	if err != nil && errors.Is(err, context.Canceled) {
 		return err
-	} else if err != nil || out.SignatureValid == nil || !(*out.SignatureValid) {
+	} else if err == nil && (out.SignatureValid == nil || !(*out.SignatureValid)) {
 		return ErrKmsVerification
+	} else if err != nil {
+		return errors.Wrap(err, ErrKmsVerification.Error())
 	}
 
 	if k.cache != nil {
